@@ -23,6 +23,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
         with:
@@ -38,7 +44,7 @@ jobs:
         run: vp pack
 
       - name: Publish package
-        run: vp pm publish --access public -- --provenance --no-git-checks
+        run: npm publish --access public --provenance --no-git-checks
 
       - name: Release
         run: vp dlx changelogithub
