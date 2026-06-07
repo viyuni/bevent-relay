@@ -6,7 +6,13 @@ import { Cmd } from '../events/index.ts';
 import { type DanmuServer, fetchDanmuInfo, fetchNavInfo, type FetchBiliNavResp } from './bili-api';
 import { ListenerCookieProvider } from './cookie-provider';
 import * as AllParsers from './parsers';
-import { resolveReconnectConfig, retry, type RetryConfig } from './reconnect';
+import {
+  calculateBackoffDelay,
+  resolveReconnectConfig,
+  retry,
+  wait,
+  type RetryConfig,
+} from './reconnect';
 import {
   ParserEventStatus,
   ReconnectListenerStatus,
@@ -61,6 +67,7 @@ export class BliveListener {
   private reconnectConfig: Required<ReconnectConfig>;
   private retryCount = 0;
   private healthCheckTimer: NodeJS.Timeout | null = null;
+  private reconnectPromise: Promise<void> | null = null;
   private isIntentionallyStopped = false;
   private currentStatus: ReconnectListenerStatus = ReconnectListenerStatus.Idle;
   private static parsers = Object.values(AllParsers);
@@ -198,6 +205,23 @@ export class BliveListener {
   }
 
   private async connectOnce(config: ConnectOnceConfig = this.reconnectConfig) {
+    if (this.isIntentionallyStopped) return;
+
+    if (config.delayBeforeFirstAttempt) {
+      const resolvedConfig = resolveReconnectConfig(config);
+      await wait(calculateBackoffDelay(config.retryOffset ?? 0, resolvedConfig));
+    }
+
+    const cookie = this.cookieProvider.value;
+
+    const [{ mid = 0 }, { randomServer, token }] = await Promise.all([
+      this.dependencies.fetchNavInfo(cookie),
+      this.dependencies.fetchDanmuInfo(this.roomId, cookie),
+    ]);
+
+    this.uid = mid;
+    if (mid === 0) console.warn('Viyuni Sync account not logged in.');
+
     await retry(
       async (retryCount) => {
         if (this.isIntentionallyStopped) return;
@@ -206,17 +230,6 @@ export class BliveListener {
         console.info(
           `[Room ${this.roomId}] Connecting (${this.getRetryLogLabel(retryCount, config)}).`,
         );
-        await this.refreshCookie();
-        const cookie = this.cookieProvider.value;
-
-        const [{ mid = 0 }, { randomServer, token }] = await Promise.all([
-          this.dependencies.fetchNavInfo(cookie),
-          this.dependencies.fetchDanmuInfo(this.roomId, cookie),
-        ]);
-
-        this.uid = mid;
-        if (mid === 0) console.warn('Viyuni Sync account not logged in.');
-
         const ws = this.dependencies.createWebSocket(this.roomId, {
           host: randomServer?.host,
           port: randomServer?.port,
@@ -229,6 +242,7 @@ export class BliveListener {
       },
       {
         ...config,
+        delayBeforeFirstAttempt: false,
         onError: (error, retryCount) => {
           console.warn(
             `[Room ${this.roomId}] Connect failed (${this.getRetryLogLabel(retryCount, config)}).`,
@@ -282,7 +296,16 @@ export class BliveListener {
   private async scheduleReconnect(reason: string) {
     if (this.isIntentionallyStopped) return;
     if (this.currentStatus === ReconnectListenerStatus.Connecting) return;
+    if (this.reconnectPromise) return;
 
+    this.reconnectPromise = this.reconnect(reason).finally(() => {
+      this.reconnectPromise = null;
+    });
+
+    await this.reconnectPromise;
+  }
+
+  private async reconnect(reason: string) {
     this.currentStatus = ReconnectListenerStatus.Reconnecting;
 
     if (this.retryCount >= this.reconnectConfig.maxRetries) {

@@ -102,26 +102,25 @@ test('reconnects after the websocket closes', async () => {
   expect(listener.status).toBe(ReconnectListenerStatus.Connected);
 });
 
-test('retries start failures before connecting', async () => {
+test('retries websocket creation without refetching connection config', async () => {
   vi.useFakeTimers();
-  let navAttempts = 0;
+  let createAttempts = 0;
   const sockets: FakeWebSocket[] = [];
   const deps: ListenerDependencies = {
-    fetchNavInfo: async () => {
-      navAttempts++;
-      if (navAttempts < 3) {
-        throw new Error(`nav failed ${navAttempts}`);
-      }
-      return { mid: 10001 };
-    },
-    fetchDanmuInfo: async () => ({
+    fetchNavInfo: vi.fn(async () => ({ mid: 10001 })),
+    fetchDanmuInfo: vi.fn(async () => ({
       randomServer: {
         host: 'live.example.test',
         port: 2243,
       },
       token: 'danmu-token',
-    }),
+    })),
     createWebSocket: () => {
+      createAttempts++;
+      if (createAttempts < 3) {
+        throw new Error(`create failed ${createAttempts}`);
+      }
+
       const socket = new FakeWebSocket();
       sockets.push(socket);
       return socket;
@@ -142,34 +141,34 @@ test('retries start failures before connecting', async () => {
   const startPromise = listener.start();
   await vi.advanceTimersByTimeAsync(0);
 
-  expect(navAttempts).toBe(1);
+  expect(createAttempts).toBe(1);
   await vi.advanceTimersByTimeAsync(1000);
-  expect(navAttempts).toBe(2);
+  expect(createAttempts).toBe(2);
   await vi.advanceTimersByTimeAsync(1000);
 
   await startPromise;
-  expect(navAttempts).toBe(3);
+  expect(createAttempts).toBe(3);
+  expect(deps.fetchNavInfo).toHaveBeenCalledTimes(1);
+  expect(deps.fetchDanmuInfo).toHaveBeenCalledTimes(1);
   expect(sockets).toHaveLength(1);
   expect(listener.status).toBe(ReconnectListenerStatus.Connected);
 });
 
-test('rejects start after all retries fail', async () => {
+test('does not retry connection config fetch failures', async () => {
   vi.useFakeTimers();
-  const lastError = new Error('nav failed finally');
-  let navAttempts = 0;
+  const lastError = new Error('nav failed');
   const deps: ListenerDependencies = {
-    fetchNavInfo: async () => {
-      navAttempts++;
-      throw navAttempts === 3 ? lastError : new Error(`nav failed ${navAttempts}`);
-    },
-    fetchDanmuInfo: async () => ({
+    fetchNavInfo: vi.fn(async () => {
+      throw lastError;
+    }),
+    fetchDanmuInfo: vi.fn(async () => ({
       randomServer: {
         host: 'live.example.test',
         port: 2243,
       },
       token: 'danmu-token',
-    }),
-    createWebSocket: () => new FakeWebSocket(),
+    })),
+    createWebSocket: vi.fn(() => new FakeWebSocket()),
   };
   const listener = new BliveListener(
     {
@@ -184,11 +183,11 @@ test('rejects start after all retries fail', async () => {
   );
   const startPromise = listener.start().catch((error: unknown) => error);
 
-  await vi.advanceTimersByTimeAsync(1000);
-  await vi.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(0);
 
   await expect(startPromise).resolves.toBe(lastError);
-  expect(navAttempts).toBe(3);
+  expect(deps.fetchNavInfo).toHaveBeenCalledTimes(1);
+  expect(deps.createWebSocket).not.toHaveBeenCalled();
   expect(listener.status).toBe(ReconnectListenerStatus.Reconnecting);
 });
 
@@ -259,4 +258,31 @@ test('stops retrying after maxRetries is reached', async () => {
 
   expect(listener.status).toBe(ReconnectListenerStatus.Reconnecting);
   expect(sockets).toHaveLength(2);
+});
+
+test('deduplicates reconnect when websocket emits error then close', async () => {
+  vi.useFakeTimers();
+  const { deps, sockets } = createFakeDependencies();
+  const listener = new BliveListener(
+    {
+      roomId: 1,
+      reconnect: {
+        initialDelay: 1000,
+        maxDelay: 1000,
+        maxRetries: 2,
+        healthyAfter: 60_000,
+      },
+    },
+    deps,
+  );
+  listener.on('error', () => {});
+
+  await listener.start();
+  sockets[0]!.emitError();
+  sockets[0]!.emitClose();
+
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(sockets).toHaveLength(2);
+  expect(listener.status).toBe(ReconnectListenerStatus.Connected);
 });

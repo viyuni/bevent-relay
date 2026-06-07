@@ -4,31 +4,18 @@ export interface Guard {
   cmd: typeof Cmd.USER_TOAST_MSG_V2;
   type: typeof ViyuniEventType.Guard;
   id: string;
-  /**
-   * 稳定 key，用于避免重复事件
-   *
-   * 首次由 Toast 事件引入，由于你b开始在上舰时会自动触发一个额外赠送天数，目前的 id 构建方法会导致
-   * 额外赠送天数的事件 id 与真实上舰长事件的 id 重复。虽然很容易通过额外的字段避免重复，但是在
-   * 开放平台下这些字段存在，为了兼容控制台并且保证 OBS 模式下可以正常显示，额外引入 stableKey 给
-   * OBS 模式用
-   *
-   * @since Oct 24, 2025
-   */
-  stableKey?: string;
   uid: number;
   uname: string;
   /** 官方事件无头像，这个字段是给开放平台用的 */
   face: string;
   /**
-   * - `toast_msg`: <%アイノラパス%> 续费了舰长，今天是TA陪伴主播的第322天
-   * - `toast_msg`: <%スパラノイア%>续费了舰长1*8天
+   * - `toast_msg`: <%用户昵称%> 续费了舰长，今天是TA陪伴主播的第322天
+   * - `toast_msg`: <%用户昵称%>续费了舰长1*8天
    * - `role_name`: 大航海名称，舰长、提督、总督
    */
   message: string;
   /**
    * 大航海价格
-   *
-   * 开放平台 Mar 17, 2024 之后本站支持大航海价格，api 那边不知道什么时候加的😅
    */
   price: number;
   /**
@@ -48,7 +35,6 @@ export interface Guard {
    * 大航海数量，盲盒时该数量依然为 1
    */
   total: number;
-
   /**
    * 统一用月来计算舰长数量
    */
@@ -56,7 +42,6 @@ export interface Guard {
 
   /** 是否为年舰 */
   isYearGuard: boolean;
-
   /**
    * 单位，月、年，盲盒时该单位为 `*8天`、`*15天`、etc
    */
@@ -79,6 +64,5 @@ export interface Guard {
 
   /** 直播间 ID */
   roomId: number;
-
   read: boolean;
 }
