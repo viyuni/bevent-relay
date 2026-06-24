@@ -36,6 +36,8 @@ class FakeWebSocket implements ListenerWebSocket {
   }
 }
 
+const sendDanmu = vi.fn(async () => ({}));
+
 function createFakeDependencies() {
   const sockets: FakeWebSocket[] = [];
   const deps: ListenerDependencies = {
@@ -47,6 +49,7 @@ function createFakeDependencies() {
       },
       token: 'danmu-token',
     }),
+    sendDanmu,
     createWebSocket: () => {
       const socket = new FakeWebSocket();
       sockets.push(socket);
@@ -115,6 +118,7 @@ test('retries websocket creation without refetching connection config', async ()
       },
       token: 'danmu-token',
     })),
+    sendDanmu,
     createWebSocket: () => {
       createAttempts++;
       if (createAttempts < 3) {
@@ -168,6 +172,7 @@ test('does not retry connection config fetch failures', async () => {
       },
       token: 'danmu-token',
     })),
+    sendDanmu,
     createWebSocket: vi.fn(() => new FakeWebSocket()),
   };
   const listener = new BliveListener(
@@ -228,6 +233,7 @@ test('stops retrying after maxRetries is reached', async () => {
       },
       token: 'danmu-token',
     }),
+    sendDanmu,
     createWebSocket: () => {
       const socket = new FakeWebSocket();
       sockets.push(socket);
