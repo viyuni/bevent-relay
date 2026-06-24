@@ -1,3 +1,4 @@
+import { parseCookie } from 'cookie';
 import ky from 'ky';
 
 export interface BiliResponse<T> {
@@ -32,6 +33,17 @@ export type DanmuConf = {
 };
 
 export type FetchDanmuConfResp = BiliResponse<DanmuConf>;
+
+export interface SendDanmuOptions {
+  color?: number;
+  fontSize?: number;
+  mode?: number;
+  bubble?: number;
+  rnd?: number;
+  csrfToken?: string;
+}
+
+export type SendDanmuResp = BiliResponse<Record<string, unknown>>;
 
 // bili nav 接口返回的用户信息
 export type FetchBiliNavResp = BiliResponse<{
@@ -149,4 +161,43 @@ export async function fetchNavInfo(cookie: string | null) {
   if (res.code === -101) return { mid: 0 };
 
   throw new Error(res.message);
+}
+
+export async function sendDanmu(
+  roomId: number,
+  message: string,
+  cookie: string | null,
+  options: SendDanmuOptions = {},
+) {
+  const csrfToken = options.csrfToken ?? parseCookie(cookie ?? '').bili_jct;
+
+  if (!csrfToken) {
+    throw new Error('Missing csrf token: bili_jct cookie is required to send danmu.');
+  }
+
+  const body = new FormData();
+  body.set('color', String(options.color ?? 0xffffff));
+  body.set('fontsize', String(options.fontSize ?? 25));
+  body.set('mode', String(options.mode ?? 1));
+  body.set('msg', message);
+  body.set('rnd', String(options.rnd ?? Math.floor(Date.now() / 1000)));
+  body.set('roomid', String(roomId));
+  body.set('bubble', String(options.bubble ?? 0));
+  body.set('csrf_token', csrfToken);
+  body.set('csrf', csrfToken);
+
+  const res = await ky
+    .post<SendDanmuResp>('https://api.live.bilibili.com/msg/send', {
+      credentials: 'include',
+      headers: {
+        Cookie: cookie ?? '',
+        Referer: `https://live.bilibili.com/${roomId}`,
+      },
+      body,
+    })
+    .json();
+
+  if (res.code !== 0) throw new Error(res.message);
+
+  return res.data;
 }

@@ -222,7 +222,6 @@ export interface SUPER_CHAT_MESSAGE {
     background_color: string;
     /**
      * 通常为荣耀等级所对应的角标
-     * @link https://i0.hdslb.com/bfs/live/8552fe0bbcdea2bc1c72911c015f858f4b32f7f7.png
      * */
     background_image: string;
     /** Message color in HEX format */

@@ -530,13 +530,9 @@ export interface MedalInfo {
   color_border: number;
   color_end: number;
   color_start: number;
-  /**
-   * 圆形大航海图标，并不会总是返回，例如舰长此处为空，不知道原因
-   * @link https://i0.hdslb.com/bfs/live/98a201c14a64e860a758f089144dcf3f42e7038c.png
-   */
   guard_icon: string;
   /**
-   * 0: 白字，也可能是舰长套票
+   * 0: 白字
    * 1: 总督
    * 2: 提督
    * 3: 舰长
@@ -563,7 +559,7 @@ export interface MedalInfo {
    */
   name: string;
   /**
-   * 粉丝牌所对应主播的 UID，当 `typ` 为 1 时，此时为粉丝团套票，此处的 ruid 等于粉丝团 id😅
+   * 粉丝牌所对应主播的 UID，当 `typ` 为 1 时，此时为粉丝团套票，此处的 ruid 等于粉丝团 id
    */
   ruid: number;
   /**

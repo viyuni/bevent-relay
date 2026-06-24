@@ -3,7 +3,14 @@ import { EventEmitter } from 'events';
 import { KeepLiveTCP } from 'bilibili-live-ws';
 
 import { Cmd } from '../events/index.ts';
-import { type DanmuServer, fetchDanmuInfo, fetchNavInfo, type FetchBiliNavResp } from './bili-api';
+import {
+  type DanmuServer,
+  fetchDanmuInfo,
+  fetchNavInfo,
+  sendDanmu,
+  type FetchBiliNavResp,
+  type SendDanmuOptions,
+} from './bili-api';
 import { ListenerCookieProvider } from './cookie-provider';
 import * as AllParsers from './parsers';
 import {
@@ -39,6 +46,12 @@ export interface ListenerDependencies {
     roomId: number,
     cookie?: string | null,
   ) => Promise<{ randomServer?: DanmuServer; token: string }>;
+  sendDanmu: (
+    roomId: number,
+    message: string,
+    cookie: string | null,
+    options?: SendDanmuOptions,
+  ) => Promise<Record<string, unknown>>;
   createWebSocket: (
     roomId: number,
     options: {
@@ -54,6 +67,7 @@ export interface ListenerDependencies {
 const defaultDependencies: ListenerDependencies = {
   fetchNavInfo,
   fetchDanmuInfo,
+  sendDanmu,
   createWebSocket: (roomId, options) => new KeepLiveTCP(roomId, options),
 };
 
@@ -101,6 +115,12 @@ export class BliveListener {
   async refreshCookieAndRestart(force = true) {
     await this.refreshCookie(force);
     await this.restart();
+  }
+
+  async sendDanmu(message: string, options?: SendDanmuOptions) {
+    const cookie = await this.cookieProvider.refresh();
+
+    return this.dependencies.sendDanmu(this.roomId, message, cookie, options);
   }
 
   async start() {
