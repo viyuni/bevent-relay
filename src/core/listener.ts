@@ -95,26 +95,8 @@ export class BliveListener {
     );
   }
 
-  updateCookie(newCookie: string) {
-    this.cookieProvider.update(newCookie);
-  }
-
-  async updateCookieAndRestart(newCookie: string) {
-    if (newCookie === this.cookieProvider.value) {
-      return;
-    }
-
-    this.updateCookie(newCookie);
-    await this.restart();
-  }
-
   refreshCookie(force = false): Promise<string> {
     return this.cookieProvider.refresh(force);
-  }
-
-  async refreshCookieAndRestart(force = true) {
-    await this.refreshCookie(force);
-    await this.restart();
   }
 
   async sendDanmu(message: string, options?: SendDanmuOptions) {
@@ -139,7 +121,7 @@ export class BliveListener {
     console.info(
       `[Room ${this.roomId}] Starting listener. reconnect=${this.retryCount}/${this.reconnectConfig.maxRetries}`,
     );
-    await this.connectOnce().catch((error: unknown) => {
+    await this.connectWithFreshCookie().catch((error: unknown) => {
       console.error(`[Room ${this.roomId}] Failed to start:`, error);
       this.currentStatus = ReconnectListenerStatus.Reconnecting;
       throw error;
@@ -158,12 +140,9 @@ export class BliveListener {
     this.retryCount = 0;
   }
 
-  async restart(cookie?: string) {
+  async restart() {
     console.info(`[Room ${this.roomId}] Restarting listener.`);
     this.stop();
-    if (cookie !== undefined) {
-      this.updateCookie(cookie);
-    }
     await this.start();
   }
 
@@ -224,13 +203,25 @@ export class BliveListener {
     }, this.reconnectConfig.healthyAfter);
   }
 
-  private async connectOnce(config: ConnectOnceConfig = this.reconnectConfig) {
+  private async connectWithFreshCookie(config: ConnectOnceConfig = this.reconnectConfig) {
     if (this.isIntentionallyStopped) return;
 
     if (config.delayBeforeFirstAttempt) {
       const resolvedConfig = resolveReconnectConfig(config);
       await wait(calculateBackoffDelay(config.retryOffset ?? 0, resolvedConfig));
     }
+
+    if (this.isIntentionallyStopped) return;
+
+    await this.refreshCookie(true);
+
+    if (this.isIntentionallyStopped) return;
+
+    await this.connectOnce(config);
+  }
+
+  private async connectOnce(config: ConnectOnceConfig = this.reconnectConfig) {
+    if (this.isIntentionallyStopped) return;
 
     const cookie = this.cookieProvider.value;
 
@@ -343,7 +334,7 @@ export class BliveListener {
       `[Room ${this.roomId}] ${reason}. Reconnecting (${initialRetryCount + 1}/${this.reconnectConfig.maxRetries}).`,
     );
 
-    await this.connectOnce({
+    await this.connectWithFreshCookie({
       ...this.reconnectConfig,
       maxRetries: remainingRetries,
       delayBeforeFirstAttempt: true,

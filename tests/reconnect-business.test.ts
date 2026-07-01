@@ -105,6 +105,91 @@ test('reconnects after the websocket closes', async () => {
   expect(listener.status).toBe(ReconnectListenerStatus.Connected);
 });
 
+test('force refreshes the cookie before starting the connection', async () => {
+  const calls: string[] = [];
+  const { deps } = createFakeDependencies();
+  const fetchNavInfo = deps.fetchNavInfo;
+  deps.fetchNavInfo = async (cookie) => {
+    calls.push('connect');
+    return fetchNavInfo(cookie);
+  };
+  const listener = new BliveListener({ roomId: 1 }, deps);
+  const refreshCookie = vi.spyOn(listener, 'refreshCookie').mockImplementation(async (force) => {
+    calls.push(`refresh:${force}`);
+    return '';
+  });
+
+  await listener.start();
+
+  expect(refreshCookie).toHaveBeenCalledWith(true);
+  expect(calls).toEqual(['refresh:true', 'connect']);
+});
+
+test('awaits a cookie refresh before restarting the connection', async () => {
+  const { deps, sockets } = createFakeDependencies();
+  const listener = new BliveListener({ roomId: 1 }, deps);
+  let finishRefresh: (() => void) | undefined;
+  const refreshCookie = vi
+    .spyOn(listener, 'refreshCookie')
+    .mockResolvedValueOnce('')
+    .mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishRefresh = () => resolve('');
+        }),
+    );
+
+  await listener.start();
+  const restartPromise = listener.restart();
+  await Promise.resolve();
+
+  expect(refreshCookie).toHaveBeenCalledTimes(2);
+  expect(sockets).toHaveLength(1);
+
+  finishRefresh!();
+  await restartPromise;
+
+  expect(sockets).toHaveLength(2);
+});
+
+test('awaits a cookie refresh before reconnecting', async () => {
+  vi.useFakeTimers();
+  const { deps, sockets } = createFakeDependencies();
+  const listener = new BliveListener(
+    {
+      roomId: 1,
+      reconnect: {
+        initialDelay: 1000,
+        maxDelay: 1000,
+        maxRetries: 1,
+      },
+    },
+    deps,
+  );
+  let finishRefresh: (() => void) | undefined;
+  const refreshCookie = vi
+    .spyOn(listener, 'refreshCookie')
+    .mockResolvedValueOnce('')
+    .mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishRefresh = () => resolve('');
+        }),
+    );
+
+  await listener.start();
+  sockets[0]!.emitClose();
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(refreshCookie).toHaveBeenCalledTimes(2);
+  expect(sockets).toHaveLength(1);
+
+  finishRefresh!();
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(sockets).toHaveLength(2);
+});
+
 test('retries websocket creation without refetching connection config', async () => {
   vi.useFakeTimers();
   let createAttempts = 0;
