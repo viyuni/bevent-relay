@@ -1,6 +1,6 @@
 {
   "name": "@viyuni/bevent-relay",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Typed Bilibili live event listener and parser utilities.",
   "homepage": "https://github.com/viyuni/bevent-relay#readme",
   "bugs": {
