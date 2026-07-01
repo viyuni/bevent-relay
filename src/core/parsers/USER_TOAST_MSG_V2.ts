@@ -28,7 +28,7 @@ export const USER_TOAST_MSG_V2_PARSER = defineEventParser({
       : (effect_info.room_effect_id ?? 0);
 
     return {
-      id: `${send_time}:${guard_info.start_time}:${roomId}:${guard_info.guard_level}:${pay_info.price}`,
+      id: `${send_time}:${guard_info.start_time}:${roomId}:${sender_uinfo.uid}:${guard_info.guard_level}:${pay_info.price}`,
       type: ViyuniEventType.Guard,
       cmd,
       uid: sender_uinfo.uid,
