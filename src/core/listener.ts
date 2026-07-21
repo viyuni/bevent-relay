@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 
-import { LiveTCP } from 'bilibili-live-ws';
+import { LiveWS } from 'bilibili-live-ws';
 import { nanoid } from 'nanoid';
 import type { Logger } from 'pino';
 
@@ -80,8 +80,7 @@ export interface ListenerDependencies {
   createWebSocket: (
     roomId: number,
     options: {
-      host?: string;
-      port?: number;
+      address?: string;
       key: string;
       uid: number;
       buvid: string;
@@ -93,9 +92,10 @@ const defaultDependencies: ListenerDependencies = {
   fetchNavInfo,
   fetchDanmuInfo,
   sendDanmu,
-  // BliveListener owns reconnect backoff and session cancellation. Using KeepLiveTCP here
+  // BliveListener owns reconnect backoff and session cancellation. Using KeepLiveWS here
   // would create a second, untracked reconnect loop after every transient disconnect.
-  createWebSocket: (roomId, options) => new LiveTCP(roomId, options),
+  // WSS/443 also works in container networks that block Bilibili's raw TCP port 2243.
+  createWebSocket: (roomId, options) => new LiveWS(roomId, options),
 };
 
 /**
@@ -491,8 +491,7 @@ export class BliveListener {
           'Connecting',
         );
         const ws = this.dependencies.createWebSocket(this.roomId, {
-          host: randomServer?.host,
-          port: randomServer?.port,
+          address: randomServer?.address,
           key: token,
           uid: this.uid,
           buvid: this.cookieProvider.buvid,

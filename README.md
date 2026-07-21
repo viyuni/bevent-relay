@@ -55,6 +55,9 @@ await listener.start();
 console.log(getListenerState(listener.id));
 ```
 
+The live event connection uses WSS over port 443, which is compatible with Docker and cloud
+networks that block Bilibili's raw TCP port 2243.
+
 The listener checks login state when connecting and every 10 minutes by default. A logout
 incident is emitted once and remains active across temporary API check errors. When login is
 restored, the recovery payload contains the exact invalid time, restored time, and duration:

@@ -45,7 +45,8 @@ function createFakeDependencies() {
     fetchDanmuInfo: async () => ({
       randomServer: {
         host: 'live.example.test',
-        port: 2243,
+        port: 443,
+        address: 'wss://live.example.test:443/sub',
       },
       token: 'danmu-token',
     }),
@@ -224,7 +225,8 @@ test('retries websocket creation without refetching connection config', async ()
     fetchDanmuInfo: vi.fn(async () => ({
       randomServer: {
         host: 'live.example.test',
-        port: 2243,
+        port: 443,
+        address: 'wss://live.example.test:443/sub',
       },
       token: 'danmu-token',
     })),
@@ -278,7 +280,8 @@ test('does not retry connection config fetch failures', async () => {
     fetchDanmuInfo: vi.fn(async () => ({
       randomServer: {
         host: 'live.example.test',
-        port: 2243,
+        port: 443,
+        address: 'wss://live.example.test:443/sub',
       },
       token: 'danmu-token',
     })),
@@ -339,7 +342,8 @@ test('stops retrying after maxRetries is reached', async () => {
     fetchDanmuInfo: async () => ({
       randomServer: {
         host: 'live.example.test',
-        port: 2243,
+        port: 443,
+        address: 'wss://live.example.test:443/sub',
       },
       token: 'danmu-token',
     }),

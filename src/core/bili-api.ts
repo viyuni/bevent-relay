@@ -29,6 +29,7 @@ export interface DanmuHostServer {
 export interface DanmuServer {
   host: string;
   port: number;
+  address: string;
 }
 
 export type DanmuConf = {
@@ -43,6 +44,22 @@ export type DanmuConf = {
 };
 
 export type FetchDanmuConfResp = BiliResponse<DanmuConf>;
+
+export function selectDanmuWebSocketServer(
+  servers: DanmuHostServer[] = [],
+  random = Math.random,
+): DanmuServer | undefined {
+  if (servers.length === 0) return undefined;
+
+  const server = servers[Math.floor(random() * servers.length)];
+  if (!server) return undefined;
+
+  return {
+    host: server.host,
+    port: server.wss_port,
+    address: `wss://${server.host}:${server.wss_port}/sub`,
+  };
+}
 
 export interface SendDanmuOptions {
   color?: number;
@@ -152,8 +169,9 @@ export async function fetchDanmuInfo(roomId: number, cookie?: string | null) {
 
   if (res.code !== 0) throw new BiliApiError(res.message, res.code);
 
-  const randomServer =
-    res.data.server_list[Math.floor(Math.random() * res.data.server_list.length)];
+  // Prefer WSS over the raw TCP endpoints in server_list. Containers and cloud
+  // networks commonly block Bilibili's TCP port 2243, while WSS uses TLS/443.
+  const randomServer = selectDanmuWebSocketServer(res.data.host_server_list);
 
   return {
     ...res.data,
