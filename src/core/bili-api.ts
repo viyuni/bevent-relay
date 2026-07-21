@@ -1,5 +1,13 @@
+import { createHash } from 'node:crypto';
+
 import { parseCookie } from 'cookie';
 import ky from 'ky';
+
+const WBI_MIXIN_KEY_ENC_TAB = [
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28,
+  14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54,
+  21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
+];
 
 export interface BiliResponse<T> {
   /** -101 未登录 */
@@ -32,18 +40,52 @@ export interface DanmuServer {
   address: string;
 }
 
-export type DanmuConf = {
+export type DanmuInfo = {
+  group: string;
+  business_id: number;
   refresh_row_factor: number;
   refresh_rate: number;
   max_delay: number;
-  port: number;
-  host: string;
-  host_server_list: DanmuHostServer[];
-  server_list: DanmuServer[];
+  host_list: DanmuHostServer[];
   token: string;
 };
 
-export type FetchDanmuConfResp = BiliResponse<DanmuConf>;
+export type FetchDanmuInfoResp = BiliResponse<DanmuInfo>;
+
+export interface WbiImageUrls {
+  img_url: string;
+  sub_url: string;
+}
+
+function extractWbiKey(url: string): string {
+  const filename = new URL(url).pathname.split('/').pop();
+  if (!filename) throw new Error('Missing WBI key in nav response.');
+  return filename.split('.')[0] ?? '';
+}
+
+export function signWbiParams(
+  params: Record<string, string | number>,
+  wbiImages: WbiImageUrls,
+  timestamp = Math.floor(Date.now() / 1000),
+): Record<string, string> {
+  const sourceKey = extractWbiKey(wbiImages.img_url) + extractWbiKey(wbiImages.sub_url);
+  const mixinKey = WBI_MIXIN_KEY_ENC_TAB.map((index) => sourceKey[index])
+    .join('')
+    .slice(0, 32);
+  const signedParams = Object.entries({ ...params, wts: timestamp })
+    .map(([key, value]) => [key, String(value).replace(/[!'()*]/g, '')] as const)
+    .sort(([left], [right]) => left.localeCompare(right));
+  const query = signedParams
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+
+  return {
+    ...Object.fromEntries(signedParams),
+    w_rid: createHash('md5')
+      .update(query + mixinKey)
+      .digest('hex'),
+  };
+}
 
 export function selectDanmuWebSocketServer(
   servers: DanmuHostServer[] = [],
@@ -154,24 +196,55 @@ export type FetchBiliNavResp = BiliResponse<{
   name_render: null;
 }>;
 
+let pendingNavRequest:
+  | {
+      cookie: string | null;
+      promise: Promise<FetchBiliNavResp>;
+    }
+  | undefined;
+
+function fetchBiliNavResponse(cookie: string | null): Promise<FetchBiliNavResp> {
+  if (pendingNavRequest?.cookie === cookie) return pendingNavRequest.promise;
+
+  const promise = ky<FetchBiliNavResp>('https://api.bilibili.com/x/web-interface/nav', {
+    credentials: 'include',
+    headers: { Cookie: cookie ?? '' },
+  }).json();
+  pendingNavRequest = { cookie, promise };
+  const clearPendingRequest = () => {
+    if (pendingNavRequest?.promise === promise) pendingNavRequest = undefined;
+  };
+  void promise.then(clearPendingRequest, clearPendingRequest);
+  return promise;
+}
+
 export async function fetchDanmuInfo(roomId: number, cookie?: string | null) {
+  const nav = await fetchBiliNavResponse(cookie ?? null);
+  if (nav.code !== 0) throw new BiliApiError(nav.message, nav.code);
+
   const res = await ky
-    .get<FetchDanmuConfResp>(
-      `https://api.live.bilibili.com/room/v1/Danmu/getConf?room_id=${roomId}`,
-      {
-        credentials: 'include',
-        headers: {
-          Cookie: cookie ?? '',
+    .get<FetchDanmuInfoResp>('https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo', {
+      searchParams: signWbiParams(
+        {
+          id: roomId,
+          type: 0,
+          web_location: '444.8',
         },
+        nav.data.wbi_img,
+      ),
+      credentials: 'include',
+      headers: {
+        Cookie: cookie ?? '',
+        Referer: `https://live.bilibili.com/${roomId}`,
       },
-    )
+    })
     .json();
 
   if (res.code !== 0) throw new BiliApiError(res.message, res.code);
 
-  // Prefer WSS over the raw TCP endpoints in server_list. Containers and cloud
-  // networks commonly block Bilibili's TCP port 2243, while WSS uses TLS/443.
-  const randomServer = selectDanmuWebSocketServer(res.data.host_server_list);
+  // Prefer WSS over the raw TCP endpoint. Containers and cloud networks commonly
+  // block Bilibili's TCP port 2243, while WSS uses TLS/443.
+  const randomServer = selectDanmuWebSocketServer(res.data.host_list);
 
   return {
     ...res.data,
@@ -180,10 +253,7 @@ export async function fetchDanmuInfo(roomId: number, cookie?: string | null) {
 }
 
 export async function fetchNavInfo(cookie: string | null) {
-  const res = await ky<FetchBiliNavResp>('https://api.bilibili.com/x/web-interface/nav', {
-    credentials: 'include',
-    headers: { Cookie: cookie ?? '' },
-  }).json();
+  const res = await fetchBiliNavResponse(cookie);
 
   if (res.code === 0) return res.data;
   if (res.code === -101) return { isLogin: false, mid: 0 };

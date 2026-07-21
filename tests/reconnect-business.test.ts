@@ -126,6 +126,23 @@ test('force refreshes the cookie before starting the connection', async () => {
   expect(calls).toEqual(['refresh:true', 'connect']);
 });
 
+test('connects with brotli protocol version 3', async () => {
+  const { deps } = createFakeDependencies();
+  const createWebSocket = vi.fn(deps.createWebSocket);
+  deps.createWebSocket = createWebSocket;
+  const listener = new BliveListener({ roomId: 1 }, deps);
+
+  await listener.start();
+
+  expect(createWebSocket).toHaveBeenCalledWith(
+    1,
+    expect.objectContaining({
+      protover: 3,
+    }),
+  );
+  listener.dispose();
+});
+
 test('awaits a cookie refresh before restarting the connection', async () => {
   const { deps, sockets } = createFakeDependencies();
   const listener = new BliveListener({ roomId: 1 }, deps);

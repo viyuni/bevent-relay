@@ -84,6 +84,7 @@ export interface ListenerDependencies {
       key: string;
       uid: number;
       buvid: string;
+      protover: 3;
     },
   ) => ListenerWebSocket;
 }
@@ -495,6 +496,7 @@ export class BliveListener {
           key: token,
           uid: this.uid,
           buvid: this.cookieProvider.buvid,
+          protover: 3,
         });
         this.bindWebSocket(ws, sessionId);
       },
