@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 
-import { KeepLiveTCP } from 'bilibili-live-ws';
+import { LiveTCP } from 'bilibili-live-ws';
 import { nanoid } from 'nanoid';
 import type { Logger } from 'pino';
 
@@ -93,7 +93,9 @@ const defaultDependencies: ListenerDependencies = {
   fetchNavInfo,
   fetchDanmuInfo,
   sendDanmu,
-  createWebSocket: (roomId, options) => new KeepLiveTCP(roomId, options),
+  // BliveListener owns reconnect backoff and session cancellation. Using KeepLiveTCP here
+  // would create a second, untracked reconnect loop after every transient disconnect.
+  createWebSocket: (roomId, options) => new LiveTCP(roomId, options),
 };
 
 /**
