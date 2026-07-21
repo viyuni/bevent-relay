@@ -1,6 +1,7 @@
 import { createCookieSyncClient, type CookieSyncClient } from '@viyuni/cookie-sync-client';
 import { parseCookie } from 'cookie';
 
+import { logger } from './logger';
 import type { CookieSyncConfig } from './types';
 
 export class ListenerCookieProvider {
@@ -44,14 +45,17 @@ export class ListenerCookieProvider {
       this.cookieSyncClient!.getDecodedCookie()
         .then((cookie) => {
           if (!cookie) {
-            console.warn(`Cookie is invalid, using empty cookie instead.`);
+            logger.warn({ event: 'cookie_invalid' }, 'Cookie is invalid; using empty cookie');
           }
 
           this.update(cookie ?? '');
           resolve(this.cookie);
         })
         .catch((error: unknown) => {
-          console.warn(`Fetching cookie failed, using cached cookie instead.`, error);
+          logger.warn(
+            { err: error, event: 'cookie_refresh_failed' },
+            'Fetching cookie failed; using cached cookie',
+          );
           resolve(this.cookie);
         })
         .finally(() => {

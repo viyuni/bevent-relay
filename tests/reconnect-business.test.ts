@@ -152,6 +152,31 @@ test('awaits a cookie refresh before restarting the connection', async () => {
   expect(sockets).toHaveLength(2);
 });
 
+test('can restart while the initial connection is still waiting for a cookie refresh', async () => {
+  const { deps, sockets } = createFakeDependencies();
+  const listener = new BliveListener({ roomId: 1 }, deps);
+  let finishFirstRefresh: (() => void) | undefined;
+  vi.spyOn(listener, 'refreshCookie')
+    .mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishFirstRefresh = () => resolve('');
+        }),
+    )
+    .mockResolvedValue('');
+
+  const firstStart = listener.start();
+  await Promise.resolve();
+  await listener.restart();
+
+  expect(sockets).toHaveLength(1);
+  expect(listener.status).toBe(ReconnectListenerStatus.Connected);
+
+  finishFirstRefresh!();
+  await firstStart;
+  expect(sockets).toHaveLength(1);
+});
+
 test('awaits a cookie refresh before reconnecting', async () => {
   vi.useFakeTimers();
   const { deps, sockets } = createFakeDependencies();
@@ -278,7 +303,7 @@ test('does not retry connection config fetch failures', async () => {
   await expect(startPromise).resolves.toBe(lastError);
   expect(deps.fetchNavInfo).toHaveBeenCalledTimes(1);
   expect(deps.createWebSocket).not.toHaveBeenCalled();
-  expect(listener.status).toBe(ReconnectListenerStatus.Reconnecting);
+  expect(listener.status).toBe(ReconnectListenerStatus.Failed);
 });
 
 test('does not reconnect after an intentional stop', async () => {
@@ -347,7 +372,7 @@ test('stops retrying after maxRetries is reached', async () => {
   sockets[1]!.emitError();
   await vi.advanceTimersByTimeAsync(5000);
 
-  expect(listener.status).toBe(ReconnectListenerStatus.Reconnecting);
+  expect(listener.status).toBe(ReconnectListenerStatus.Failed);
   expect(sockets).toHaveLength(2);
 });
 
@@ -376,4 +401,49 @@ test('deduplicates reconnect when websocket emits error then close', async () =>
 
   expect(sockets).toHaveLength(2);
   expect(listener.status).toBe(ReconnectListenerStatus.Connected);
+});
+
+test('handles repeated close events from one connection only once', async () => {
+  vi.useFakeTimers();
+  const { deps, sockets } = createFakeDependencies();
+  const listener = new BliveListener(
+    {
+      roomId: 1,
+      reconnect: { initialDelay: 1000, maxDelay: 1000, maxRetries: 2 },
+    },
+    deps,
+  );
+  const onClose = vi.fn();
+  listener.on('close', onClose);
+
+  await listener.start();
+  sockets[0]!.emitClose();
+  sockets[0]!.emitClose();
+  sockets[0]!.emitClose();
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(sockets).toHaveLength(2);
+});
+
+test('ignores delayed close events from a stale connection', async () => {
+  vi.useFakeTimers();
+  const { deps, sockets } = createFakeDependencies();
+  const listener = new BliveListener(
+    {
+      roomId: 1,
+      reconnect: { initialDelay: 1000, maxDelay: 1000, maxRetries: 2 },
+    },
+    deps,
+  );
+
+  await listener.start();
+  sockets[0]!.emitClose();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(sockets).toHaveLength(2);
+
+  sockets[0]!.emitClose();
+  await vi.advanceTimersByTimeAsync(5000);
+
+  expect(sockets).toHaveLength(2);
 });

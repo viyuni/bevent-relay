@@ -4,6 +4,14 @@ export interface RetryConfig extends ReconnectConfig {
   delayBeforeFirstAttempt?: boolean;
   retryOffset?: number;
   onError?: (error: unknown, retryCount: number) => void;
+  signal?: AbortSignal;
+}
+
+export class RetryAbortedError extends Error {
+  constructor() {
+    super('Retry was aborted.');
+    this.name = 'AbortError';
+  }
 }
 
 export const DEFAULT_RECONNECT_CONFIG = {
@@ -27,10 +35,24 @@ export function calculateBackoffDelay(
   return Math.min(config.initialDelay * Math.pow(2, retryCount), config.maxDelay);
 }
 
-export function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+export function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new RetryAbortedError());
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new RetryAbortedError());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
+}
+
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
 }
 
 export async function retry<T>(
@@ -41,11 +63,12 @@ export async function retry<T>(
   let lastError: unknown;
 
   for (let retryCount = 0; retryCount <= resolvedConfig.maxRetries; retryCount++) {
+    if (config?.signal?.aborted) throw new RetryAbortedError();
     const backoffRetryCount = retryCount + (config?.retryOffset ?? 0);
 
     try {
       if (config?.delayBeforeFirstAttempt && retryCount === 0) {
-        await wait(calculateBackoffDelay(backoffRetryCount, resolvedConfig));
+        await wait(calculateBackoffDelay(backoffRetryCount, resolvedConfig), config.signal);
       }
 
       return await fn(retryCount);
@@ -57,7 +80,7 @@ export async function retry<T>(
         throw lastError;
       }
 
-      await wait(calculateBackoffDelay(backoffRetryCount, resolvedConfig));
+      await wait(calculateBackoffDelay(backoffRetryCount, resolvedConfig), config?.signal);
     }
   }
 

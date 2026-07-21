@@ -9,6 +9,16 @@ export interface BiliResponse<T> {
   ttl: number;
 }
 
+export class BiliApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code: number,
+  ) {
+    super(message);
+    this.name = 'BiliApiError';
+  }
+}
+
 export interface DanmuHostServer {
   host: string;
   port: number;
@@ -140,7 +150,7 @@ export async function fetchDanmuInfo(roomId: number, cookie?: string | null) {
     )
     .json();
 
-  if (res.code !== 0) throw new Error(res.message);
+  if (res.code !== 0) throw new BiliApiError(res.message, res.code);
 
   const randomServer =
     res.data.server_list[Math.floor(Math.random() * res.data.server_list.length)];
@@ -158,9 +168,9 @@ export async function fetchNavInfo(cookie: string | null) {
   }).json();
 
   if (res.code === 0) return res.data;
-  if (res.code === -101) return { mid: 0 };
+  if (res.code === -101) return { isLogin: false, mid: 0 };
 
-  throw new Error(res.message);
+  throw new BiliApiError(res.message, res.code);
 }
 
 export async function sendDanmu(
@@ -197,7 +207,7 @@ export async function sendDanmu(
     })
     .json();
 
-  if (res.code !== 0) throw new Error(res.message);
+  if (res.code !== 0) throw new BiliApiError(res.message, res.code);
 
   return res.data;
 }
